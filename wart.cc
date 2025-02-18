@@ -41,29 +41,29 @@ bool rcValidate(const std::string& filepath, std::unordered_map<std::string, std
       std::cerr << "Error: malformed line in config file: " << line << std::endl;
 
       return false;
-      
+
     }
 
     config[key] = value;
-    
+
   }
 
   if (config.find("interval") == config.end() || !validateInterval(config["interval"])) {
     std::cerr << "Error: 'interval' must be an integer > 0" << std::endl;
     return false;
-    
+
   }
 
   if (config.find("source") == config.end() || config["source"].empty()) {
     std::cerr << "Error: 'source' must be specified." << std::endl;
     return false;
-    
+
   }
 
   if (config.find("clean") == config.end() || !validateBoolean(config["clean"])) {
     std::cerr << "Error: 'clean' must be 0 or 1." << std::endl;
     return false;
-    
+
   }
 
   return true;
@@ -93,9 +93,9 @@ bool wartExists() {
     }
     wartrc.close(); // Close the file after creating it
   }
-  
+
   std::unordered_map<std::string, std::string> config;
-  
+
   if (rcValidate(wartConfig, config)) {
     std::cout << "Config is valid!" << std::endl;
     std::cout << "Interval: " << config["interval"] << " seconds" << std::endl;
@@ -117,13 +117,16 @@ void wartDestroy() {
 int main(int argc, char *argv[]) {
   printVersion();
 
-  std::string flag = argv[1];
-
-  if (flag == "destroy") {
-    wartDestroy();
-    return 0;
+  // Check if any arguments were provided
+  if (argc > 1) {
+    std::string flag = argv[1];
+    if (flag == "destroy") {
+      wartDestroy();
+      return 0;
+    }
   }
 
+  // Default behavior when no arguments are provided
   if (!wartExists()) {
     std::cerr << "Wart setup failed!" << std::endl;
     return 1;
