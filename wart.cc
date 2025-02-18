@@ -91,6 +91,12 @@ bool wartExists() {
       std::cerr << "Error: Failed to create file " << wartConfig << std::endl;
       return false;
     }
+
+    // Write default configuration
+    wartrc << "interval 3600\n"
+           << "source https://bing.biturl.top/\n"
+           << "clean 1\n";
+
     wartrc.close(); // Close the file after creating it
   }
 
