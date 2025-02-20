@@ -8,7 +8,14 @@ I like the microsoft bing wallpapers as much as people crap on microsoft whoever
 It downloads a wallpaper from like an api you can read more about here: [https://github.com/TimothyYe/bing-wallpaper](TimothyYe/bing-wallpaper) and then it sets the wallpaper based on whatever the desktop environment is or through a method of your choice in the config file. You can also add hooks like pywal to change the colorscheme of your terminal and other applications.
 
 ## How do I use it?
-It is on the AUR or you can compile it yourself the dependencies are [https://github.com/nlohmann/json](nlohmann/json) and [https://github.com/curl/curl](libcurl) and you can compile it with `make` and install it with `make install` or `make install PREFIX=/usr` if you want to install it to /usr instead of /usr/local.
+It is on the AUR or you can compile it yourself the dependencies are [https://github.com/nlohmann/json](nlohmann/json) and [https://github.com/curl/curl](libcurl) and you can compile it with `make` and install it with `make install` or `make install PREFIX=/usr` if you want to install it to /usr instead of /usr/local. You also need CMake of course.
+```
+git clone https://github.com/jeebuscrossaint/wart.git
+cd wart
+cmake -S . -B build
+cd build
+make
+```
 
 ## How do I configure it?
 You can configure it by either creating the config file in ~/.wart/wartrc or by just running wart which on start will create a default config file if none exists. It is very easy to understand.
