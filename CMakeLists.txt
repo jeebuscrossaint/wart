@@ -5,25 +5,31 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# force clang
+# Force Clang
 set(CMAKE_C_COMPILER clang)
 set(CMAKE_CXX_COMPILER clang++)
 
+# Find dependencies
 find_package(CURL REQUIRED)
+find_package(nlohmann_json REQUIRED)
+
+# Optimization settings
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -flto -march=native -mtune=native -DNDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g -fsanitize=address,undefined -fno-omit-frame-pointer")
+
+# Define executable
+add_executable(wart wart.cc)
+
+# Include directories
 include_directories(${CURL_INCLUDE_DIRS})
 
-# optimization
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -flto -march=native -mtune=native -DNDEBUG -lcurl -O2")
-set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g -fsanitize=address,undefined -fno-omit-frame-pointer -lcurl -O2")
+# Link libraries
+target_link_libraries(wart PRIVATE ${CURL_LIBRARIES} nlohmann_json::nlohmann_json)
 
-# exec
-add_executable(wart wart.cc)
-target_link_libraries(wart ${CURL_LIBRARIES})
-
-# use llvm toolchain optimizations
+# Use LLVM toolchain optimizations
 target_link_options(wart PRIVATE -flto -Wl,--strip-all -Wl,--gc-sections)
 
-# enable warnings and security flags
+# Enable warnings and security flags
 target_compile_options(wart PRIVATE
   -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
   -Wnull-dereference -Wdouble-promotion -Wformat=2
@@ -31,7 +37,7 @@ target_compile_options(wart PRIVATE
   -ffunction-sections -fdata-sections
 )
 
-# enable sanitizers in debug mode
+# Enable sanitizers in debug mode
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(wart PRIVATE -fsanitize=address,undefined)
   target_link_options(wart PRIVATE -fsanitize=address,undefined)

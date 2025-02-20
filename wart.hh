@@ -12,6 +12,12 @@
 #include <vector>
 #include <cstring>
 #include <sstream>
+#include <atomic>
+#include <thread>
+
+
+// linux
+#include <signal.h>
 
 // lib curl
 #include <curl/curl.h>
@@ -25,6 +31,7 @@
 #define SAFE_GETENV(var) (getenv(var) ? getenv(var) : "")
 #define WART_HOME (std::string(SAFE_GETENV("HOME")) + "/.wart/")
 #define WART_CONFIG (WART_HOME + "wartrc")
+#define WART_LOCK (WART_HOME + "wart.lock")
 
 #define PRINT_ERROR(msg)                                                       \
   std::cerr << "Error: " << msg << " at " << __FILE__ << " l: " << __LINE__    \
