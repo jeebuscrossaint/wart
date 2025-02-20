@@ -1,4 +1,10 @@
 #include "wart.hh"
+#include <chrono>
+#include <cstdio>
+#include <ctime>
+#include <string>
+#include <thread>
+#include <unordered_map>
 
 using namespace std;
 
@@ -24,6 +30,20 @@ void printVersion() {
               << NLOHMANN_JSON_VERSION_PATCH << std::endl;
 }
 
+void logMessage(LogLevel level, const std::string& message) {
+    static const std::unordered_map<LogLevel, std::string> levelStrings = {
+        {LogLevel::DEBUG, "DEBUG"},
+        {LogLevel::INFO, "INFO"},
+        {LogLevel::WARNING, "WARNING"},
+        {LogLevel::ERROR, "ERROR"}
+    };
+
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+
+    std::cout << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S") << " [" << levelStrings.at(level) << "] " << message << std::endl;
+}
+
 // helper function to validate each part of rc file
 bool validateInterval(const std::string& value) {
   try {
@@ -32,6 +52,18 @@ bool validateInterval(const std::string& value) {
   } catch (...) {
     return false;
   }
+}
+
+bool validateHooks(const std::string& line) {
+    return line.starts_with("x11hooks ") ||
+           line.starts_with("waylandhooks ") ||
+           line.starts_with("hooks ");  // for DE-agnostic hooks
+}
+
+bool validateApplier(const std::string& line) {
+    return line.starts_with("x11applier ") ||
+           line.starts_with("waylandapplier ") ||
+           line.starts_with("applier ");  // for DE-agnostic applier
 }
 
 bool validateResolution(const std::string& value) {
@@ -43,12 +75,18 @@ bool validateResolution(const std::string& value) {
     return std::find(validResolutions.begin(), validResolutions.end(), value) != validResolutions.end();
 }
 
-bool validateFormat(const std::string& value) {
+bool validateFormat(std::string_view value) {
     return value == "jpg" || value == "webp" || value == "png";
 }
 
 bool validateBoolean(const std::string& value) {
   return value == "0" || value == "1";
+}
+
+bool validatePreviewer(const std::string& line) {
+    return line.starts_with("x11previewer ") ||
+           line.starts_with("waylandpreviewer ") ||
+           line.starts_with("previewer ");
 }
 
 bool rcValidate(const std::string& filepath, std::unordered_map<std::string, std::string>& config) {
@@ -78,12 +116,6 @@ bool rcValidate(const std::string& filepath, std::unordered_map<std::string, std
 
   if (config.find("interval") == config.end() || !validateInterval(config["interval"])) {
     std::cerr << "Error: 'interval' must be an integer > 0" << std::endl;
-    return false;
-
-  }
-
-  if (config.find("source") == config.end() || config["source"].empty()) {
-    std::cerr << "Error: 'source' must be specified." << std::endl;
     return false;
 
   }
@@ -132,10 +164,22 @@ bool wartExists() {
 
     // Write default configuration
     wartrc << "interval 3600\n"
-           << "source https://bing.biturl.top/\n"
            << "clean 1\n"
            << "resolution 1920x1200\n"
-           << "format jpg\n";
+           << "format jpg\n"
+           << "# Hook examples:\n"
+           << "# x11hooks wal -i $WARTPAPER\n"
+           << "# waylandhooks swww img $WARTPAPER\n"
+           << "# hooks notify-send \"New wallpaper set\"\n"
+           << "# Applier examples:\n"
+           << "# x11applier feh --bg-fill $WARTPAPER\n"
+           << "# waylandapplier swww img $WARTPAPER\n"
+           << "# applier custom-wallpaper-script $WARTPAPER\n"
+           << "# Previewer examples:\n"
+           << "# x11previewer eog $WARTPAPER\n"
+           << "# waylandpreviewer imv $WARTPAPER\n"
+           << "# previewer xdg-open $WARTPAPER\n";
+
 
     wartrc.close(); // Close the file after creating it
   }
@@ -145,7 +189,6 @@ bool wartExists() {
   if (rcValidate(wartConfig, config)) {
     std::cout << "Config is valid!" << std::endl;
     std::cout << "Interval: " << config["interval"] << " seconds" << std::endl;
-    std::cout << "Source: " << config["source"] << std::endl;
     std::cout << "Clean: " << (config["clean"] == "1" ? "Enabled" : "Disabled") << std::endl;
     std::cout << "Resolution: " << (config["resolution"]) << std::endl;
     std::cout << "Format: " << (config["format"]) << std::endl;
@@ -184,8 +227,8 @@ bool fetchWallpaper(const std::unordered_map<std::string, std::string>& config) 
     }
 
     // construct url with parameters
-    std::string url = config.at("source") + "/?resolution=" + config.at("resolution") +
-                     "&format=json&index=0&mkt=en-US";
+    std::string url = "https://bing.biturl.top/?resolution=" + config.at("resolution") +
+                    "&format=json&index=0&mkt=en-US";
 
     std::cout << "Fetching from URL: " << url << std::endl;
 
@@ -270,7 +313,14 @@ bool fetchWallpaper(const std::unordered_map<std::string, std::string>& config) 
     return true;
 }
 
-void cleanOldWallpapers(const std::string& format) { for (const auto& entry : fs::directory_iterator(wartHome)) { if (entry.path().extension() == "." + format) { fs::remove(entry.path()); } } }
+void cleanOldWallpapers(const std::string& format) {
+    const std::string ext = "." + format;
+    for (const auto& entry : fs::directory_iterator(wartHome)) {
+        if (entry.path().extension() == ext) {
+            fs::remove(entry.path());
+        }
+    }
+}
 
 bool createLockFile() {
     if (fs::exists(WART_LOCK)) {
@@ -303,6 +353,7 @@ void wartDestroy() {
   fs::remove(wartConfig);
   fs::remove_all(wartHome);
   removeLockFile();
+  std::cout << "Wart has been destroyed." << std::endl;
 }
 
 std::atomic<bool> running{true};
@@ -312,39 +363,370 @@ void signalHandler(int signum [[maybe_unused]]) {
 }
 
 bool setWallpaper(const std::string& path) {
-    const char* desktop = getenv("XDG_CURRENT_DESKTOP");
-    if (!desktop) {
-        PRINT_ERROR("Could not detect desktop environment");
+    const char* sessionType = getenv("XDG_SESSION_TYPE");
+    if (!sessionType) {
+        PRINT_ERROR("Could not detect session type");
         return false;
     }
 
-    std::string cmd;
-    std::string desktopStr(desktop);
+    std::string session(sessionType);
+    std::ifstream file(wartConfig);
+    std::string line;
+    std::string applierCmd;
+
+    // Find appropriate applier
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        if ((session == "x11" && line.starts_with("x11applier ")) ||
+            (session == "wayland" && line.starts_with("waylandapplier ")) ||
+            line.starts_with("applier ")) {
+
+            applierCmd = line.substr(line.find(' ') + 1);
+            break;
+        }
+    }
+
+    if (applierCmd.empty()) {
+        // Fallback to default appliers if none specified
+        if (session == "wayland") {
+            applierCmd = "swww img";
+        } else if (session == "x11") {
+            applierCmd = "feh --bg-fill";
+        } else {
+            PRINT_ERROR("No applier configured and no fallback available");
+            return false;
+        }
+    }
+
+    // Replace $WARTPAPER with actual path
     std::string absPath = fs::absolute(path).string();
+    size_t pos = applierCmd.find("$WARTPAPER");
+    while (pos != std::string::npos) {
+        applierCmd.replace(pos, 10, absPath);
+        pos = applierCmd.find("$WARTPAPER");
+    }
 
-    if (desktopStr == "GNOME" || desktopStr == "Unity") {
-        cmd = "gsettings set org.gnome.desktop.background picture-uri 'file://" + absPath + "'";
+    if (applierCmd.find("$WARTPAPER") == std::string::npos) {
+        applierCmd += " " + absPath;  // Append path if $WARTPAPER not in command
     }
-    else if (desktopStr == "KDE") {
-        cmd = "qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript '"
-              "var allDesktops = desktops();for (i=0;i<allDesktops.length;i++) {"
-              "d = allDesktops[i];d.wallpaperPlugin = \"org.kde.image\";"
-              "d.currentConfigGroup = [\"Wallpaper\", \"org.kde.image\", \"General\"];"
-              "d.writeConfig(\"Image\", \"" + absPath + "\")}'";
+
+    logMessage(LogLevel::INFO, "Setting wallpaper with: " + applierCmd);
+    return system(applierCmd.c_str()) == 0;
+}
+
+void updateResolution(const std::string& newResolution) {
+    if (!validateResolution(newResolution)) {
+        PRINT_ERROR("Invalid resolution: " << newResolution);
+        return;
     }
-    else if (desktopStr == "XFCE") {
-        cmd = "xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/workspace0/last-image -s " + absPath;
+
+    // Read current config
+    std::vector<std::string> lines;
+    lines.reserve(10);
+    std::ifstream file(wartConfig);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        if (line.substr(0, 10) == "resolution") {
+            lines.emplace_back("resolution " + newResolution);
+        } else {
+            lines.emplace_back(line);
+        }
     }
-    else if (desktopStr == "Hyprland") {
-        cmd = "Downloaded succesfully.";
+
+    // Write updated config
+    std::ofstream outFile(wartConfig);
+    for (const auto& l : lines) {
+        outFile << l << "\n";
     }
-    else {
-        PRINT_ERROR("Unsupported desktop environment: " << desktopStr);
+}
+
+void updateInterval(const std::string& newInterval) {
+    if (!validateInterval(newInterval)) {
+        PRINT_ERROR("Invalid interval: " << newInterval);
+        return;
+    }
+
+    std::vector<std::string> lines;
+    std::ifstream file(wartConfig);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        if (line.substr(0, 8) == "interval") {
+            lines.push_back("interval " + newInterval);
+        } else {
+            lines.push_back(line);
+        }
+    }
+
+    std::ofstream outFile(wartConfig);
+    for (const auto& l : lines) {
+        outFile << l << "\n";
+    }
+}
+
+void showStatus() {
+    if (!fs::exists(wartHome + "wallpaper.*")) {
+        std::cout << "No wallpaper has been downloaded yet." << std::endl;
+        return;
+    }
+
+    std::unordered_map<std::string, std::string> config;
+    if (rcValidate(wartConfig, config)) {
+        std::cout << "Current configuration:" << std::endl;
+        std::cout << "Resolution: " << config["resolution"] << std::endl;
+        std::cout << "Format: " << config["format"] << std::endl;
+        std::cout << "Interval: " << config["interval"] << " seconds" << std::endl;
+        std::cout << "Clean mode: " << (config["clean"] == "1" ? "Enabled" : "Disabled") << std::endl;
+
+        // Show wallpaper file info
+        auto wallpaperPath = wartHome + "wallpaper." + config["format"];
+        std::cout << "Current wallpaper: " << wallpaperPath << std::endl;
+        std::cout << "Size: " << fs::file_size(wallpaperPath) << " bytes" << std::endl;
+        auto ftime = fs::last_write_time(wallpaperPath);
+        auto sctp = std::chrono::file_clock::to_sys(ftime);
+        auto time = std::chrono::system_clock::to_time_t(sctp);
+        std::cout << "Last updated: " << std::ctime(&time);
+    }
+}
+
+void showHelp() {
+    std::cout << "Wart - Wallpaper Art\n"
+              << "Usage: wart [command] [options]\n\n"
+              << "Commands:\n"
+              << "  resolution <res>   Set wallpaper resolution (e.g., 1920x1080, UHD)\n"
+              << "  init              Initialize wart configuration\n"
+              << "  format <fmt>       Set image format (jpg, webp, png)\n"
+              << "  interval <sec>     Set update interval in seconds\n"
+              << "  status            Show current configuration and wallpaper status\n"
+              << "  preview           Download and preview next wallpaper\n"
+              << "  destroy           Remove all wart files and configurations\n"
+              << "  -d, daemon        Run in daemon mode\n"
+              << "  -h, --help        Show this help message\n\n"
+              << "  restore" << "         Restore previous wallpaper\n\n"
+              << "Example:\n"
+              << "  wart resolution UHD\n"
+              << "  wart format webp\n"
+              << "  wart preview\n"
+              << "  wart -d\n";
+}
+
+void updateFormat(const std::string& newFormat) {
+    if (!validateFormat(newFormat)) {
+        PRINT_ERROR("Invalid format: " << newFormat);
+        return;
+    }
+
+    std::vector<std::string> lines;
+    std::ifstream file(wartConfig);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        if (line.substr(0, 6) == "format") {
+            lines.push_back("format " + newFormat);
+        } else {
+            lines.push_back(line);
+        }
+    }
+
+    std::ofstream outFile(wartConfig);
+    for (const auto& l : lines) {
+        outFile << l << "\n";
+    }
+}
+
+bool daemonize() {
+    pid_t pid = fork();
+    if (pid < 0) {
+        PRINT_ERROR("Failed to fork");
+        return false;
+    }
+    if (pid > 0) {
+        exit(0); // parent exists
+    }
+
+    // child process continues
+    setsid(); // create a new session
+
+    // redirect std file descriptors
+    std::freopen("/dev/null", "r", stdin);
+    std::freopen("/dev/null", "w", stdout);
+    std::freopen("/dev/null", "w", stderr);
+
+    return true;
+}
+
+void executeHooks(const std::string& wallpaperPath) {
+    std::ifstream file(wartConfig);
+    std::string line;
+    const char* sessionType = getenv("XDG_SESSION_TYPE");
+
+    if (!sessionType) {
+        PRINT_ERROR("Could not detect session type");
+        return;
+    }
+
+    std::string session(sessionType);
+
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        if ((session == "x11" && line.starts_with("x11hooks ")) ||
+            (session == "wayland" && line.starts_with("waylandhooks ")) ||
+            line.starts_with("hooks ")) {
+
+            // Extract the command part
+            std::string cmd = line.substr(line.find(' ') + 1);
+
+            // Replace $WARTPAPER with actual path
+            size_t pos = cmd.find("$WARTPAPER");
+            while (pos != std::string::npos) {
+                cmd.replace(pos, 10, wallpaperPath);
+                pos = cmd.find("$WARTPAPER");
+            }
+
+            logMessage(LogLevel::INFO, "Executing hook: " + cmd);
+            if (system(cmd.c_str()) != 0) {
+                logMessage(LogLevel::ERROR, "Hook failed: " + cmd);
+            }
+        }
+    }
+}
+
+bool retryOperation(std::function<bool()> operation, int maxRetries = 3, int delaySeconds = 5) {
+    for (int attempt = 1; attempt <= maxRetries; ++attempt) {
+        if (operation()) {
+            return true;
+        }
+
+        if (attempt < maxRetries) {
+            logMessage(LogLevel::WARNING, "Operation failed, retrying in " + std::to_string(delaySeconds) + " seconds...");
+            std::this_thread::sleep_for(std::chrono::seconds(delaySeconds));
+        }
+    }
+    return false;
+}
+
+void reloadConfig(std::unordered_map<std::string, std::string>& config) {
+    logMessage(LogLevel::INFO, "Reloading configuration...");
+    std::unordered_map<std::string, std::string> newConfig;
+
+    if (rcValidate(wartConfig, newConfig)) {
+        config = newConfig;
+        logMessage(LogLevel::INFO, "Configuration reloaded successfully");
+    } else {
+        logMessage(LogLevel::ERROR, "Failed to reload configuration");
+    }
+}
+
+bool previewWallpaper() {
+    std::unordered_map<std::string, std::string> config;
+    if (!rcValidate(wartConfig, config)) {
+        PRINT_ERROR("Failed to load configuration");
         return false;
     }
 
-    std::cout << "Executing: " << cmd << std::endl;
-    return system(cmd.c_str()) == 0;
+    if (fetchWallpaper(config)) {
+        std::string wallpaperPath = wartHome + "wallpaper." + config["format"];
+
+        const char* sessionType = getenv("XDG_SESSION_TYPE");
+        if (!sessionType) {
+            PRINT_ERROR("Could not detect session type");
+            return false;
+        }
+
+        std::string session(sessionType);
+        std::ifstream file(wartConfig);
+        std::string line;
+        std::string previewerCmd;
+
+        // Find appropriate previewer
+        while (std::getline(file, line)) {
+            if (line.empty() || line[0] == '#') continue;
+
+            if ((session == "x11" && line.starts_with("x11previewer ")) ||
+                (session == "wayland" && line.starts_with("waylandpreviewer ")) ||
+                line.starts_with("previewer ")) {
+
+                previewerCmd = line.substr(line.find(' ') + 1);
+                break;
+            }
+        }
+
+        if (previewerCmd.empty()) {
+            // Fallback to default previewers if none specified
+            if (session == "wayland") {
+                if (system("which imv >/dev/null 2>&1") == 0) {
+                    previewerCmd = "imv";
+                } else if (system("which swayimg >/dev/null 2>&1") == 0) {
+                    previewerCmd = "swayimg";
+                }
+            } else {
+                if (system("which feh >/dev/null 2>&1") == 0) {
+                    previewerCmd = "feh";
+                } else if (system("which eog >/dev/null 2>&1") == 0) {
+                    previewerCmd = "eog";
+                }
+            }
+
+            if (previewerCmd.empty()) {
+                previewerCmd = "xdg-open";
+            }
+        }
+
+        // Replace $WARTPAPER with actual path
+        std::string absPath = fs::absolute(wallpaperPath).string();
+        size_t pos = previewerCmd.find("$WARTPAPER");
+        while (pos != std::string::npos) {
+            previewerCmd.replace(pos, 10, absPath);
+            pos = previewerCmd.find("$WARTPAPER");
+        }
+
+        if (previewerCmd.find("$WARTPAPER") == std::string::npos) {
+            previewerCmd += " " + absPath;
+        }
+
+        logMessage(LogLevel::INFO, "Previewing with: " + previewerCmd);
+        return system(previewerCmd.c_str()) == 0;
+    }
+    return false;
+}
+
+void backupWallpaper(const std::string& currentWallpaper) {
+    std::string backupPath = wartHome + "previous." +
+                            fs::path(currentWallpaper).extension().string().substr(1);
+    try {
+        if (fs::exists(currentWallpaper)) {
+            fs::copy_file(currentWallpaper, backupPath,
+                         fs::copy_options::overwrite_existing);
+        }
+    } catch (const fs::filesystem_error& e) {
+        PRINT_ERROR("Failed to backup wallpaper: " << e.what());
+    }
+}
+
+bool restorePreviousWallpaper() {
+    std::unordered_map<std::string, std::string> config;
+    if (!rcValidate(wartConfig, config)) {
+        return false;
+    }
+
+    std::string previousPath = wartHome + "previous." + config["format"];
+    if (!fs::exists(previousPath)) {
+        PRINT_ERROR("No previous wallpaper found");
+        return false;
+    }
+
+    std::string currentPath = wartHome + "wallpaper." + config["format"];
+    try {
+        fs::copy_file(previousPath, currentPath,
+                     fs::copy_options::overwrite_existing);
+        return setWallpaper(currentPath);
+    } catch (const fs::filesystem_error& e) {
+        PRINT_ERROR("Failed to restore previous wallpaper: " << e.what());
+        return false;
+    }
 }
 
 void wartLoop(const std::unordered_map<std::string, std::string>& config) {
@@ -356,10 +738,17 @@ void wartLoop(const std::unordered_map<std::string, std::string>& config) {
             cleanOldWallpapers(config.at("format"));
         }
 
+        std::string wallpaperPath = wartHome + "wallpaper." + config.at("format");
+
+        // Backup current wallpaper before fetching new one
+        if (fs::exists(wallpaperPath)) {
+            backupWallpaper(wallpaperPath);
+        }
+
         if (fetchWallpaper(config)) {
-            std::string wallpaperPath = wartHome + "wallpaper." + config.at("format");
             if (setWallpaper(wallpaperPath)) {
                 std::cout << "Successfully set wallpaper" << std::endl;
+                executeHooks(wallpaperPath);
             } else {
                 PRINT_ERROR("Failed to set wallpaper");
             }
@@ -374,23 +763,95 @@ void wartLoop(const std::unordered_map<std::string, std::string>& config) {
     }
 }
 
+bool wartInit() {
+    // Check and create directory
+    if (!fs::exists(wartHome)) {
+        std::cout << "Creating directory: " << wartHome << std::endl;
+        if (!fs::create_directory(wartHome)) {
+            PRINT_ERROR("Failed to create directory " << wartHome);
+            return false;
+        }
+    }
+
+    // Check and create config file
+    if (!fs::exists(wartConfig)) {
+        std::cout << "Creating config file: " << wartConfig << std::endl;
+        std::ofstream wartrc(wartConfig);
+        if (!wartrc) {
+            PRINT_ERROR("Failed to create config file " << wartConfig);
+            return false;
+        }
+
+        // Write default configuration
+        wartrc << "interval 3600\n"
+               << "clean 1\n"
+               << "resolution 1920x1200\n"
+               << "format jpg\n"
+               << "# Hook examples:\n"
+               << "# x11hooks wal -i $WARTPAPER\n"
+               << "# waylandhooks swww img $WARTPAPER\n"
+               << "# hooks notify-send \"New wallpaper set\"\n"
+               << "# Applier examples:\n"
+               << "# x11applier feh --bg-fill $WARTPAPER\n"
+               << "# waylandapplier swww img $WARTPAPER\n"
+               << "# applier custom-wallpaper-script $WARTPAPER\n"
+               << "# Previewer examples:\n"
+               << "# x11previewer feh $WARTPAPER\n"
+               << "# waylandpreviewer imv $WARTPAPER\n"
+               << "# previewer custom-preview-script $WARTPAPER\n";
+
+        wartrc.close();
+        std::cout << "Configuration file created successfully." << std::endl;
+    } else {
+        std::cout << "Configuration file already exists." << std::endl;
+    }
+
+    return true;
+}
+
 int main(int argc, char *argv[]) {
     printVersion();
 
-    // Check if any arguments were provided
-    if (argc > 1) {
-        std::string flag = argv[1];
-        if (flag == "destroy") {
+    bool daemon = false;
+
+    // Parse command line arguments
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "init") {
+            if (wartInit()) {
+                return 0;
+            }
+        }
+        else if (arg == "destroy") {
             wartDestroy();
             return 0;
-        }
-        else if (flag == "resolution" && argc > 2) {
-            std::string newResolution = argv[2];
-            // TODO: Update resolution in config file
-        }
-        else if (flag == "format" && argc > 2) {
-            std::string newFormat = argv[2];
-            // TODO: Update format in config file
+        } else if (arg == "resolution" && i + 1 < argc) {
+            updateResolution(argv[++i]);
+            return 0;
+        } else if (arg == "format" && i + 1 < argc) {
+            updateFormat(argv[++i]);
+            return 0;
+        } else if (arg == "daemon" || arg == "-d") {
+            daemon = true;
+        } else if (arg == "help" || arg == "-h" || arg == "--help") {
+            showHelp();
+            return 0;
+        } else if (arg == "interval" && i + 1 < argc) {
+            updateInterval(argv[++i]);
+            return 0;
+        } else if (arg == "status") {
+            showStatus();
+            return 0;
+        } else if (arg == "preview") {
+            if (previewWallpaper()) {
+                return 0;
+            }
+        } else if (arg == "restore") {
+            if (restorePreviousWallpaper()) {
+                std::cout << "Previous wallpaper restored succesfully" << std::endl;
+                return 0;
+            }
+            return 1;
         }
     }
 
@@ -399,7 +860,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Create lock file
+    if (daemon && !daemonize()) {
+        return 1;
+    }
+
     if (!createLockFile()) {
         return 1;
     }
@@ -410,16 +874,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Run the main loop
     try {
         wartLoop(config);
     } catch (const std::exception& e) {
-        PRINT_ERROR("Exception in main loop: " << e.what());
+        logMessage(LogLevel::ERROR, "Exception in main loop: " + std::string(e.what()));
         removeLockFile();
         return 1;
     }
 
-    // Clean up
     removeLockFile();
     return 0;
 }

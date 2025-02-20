@@ -14,6 +14,7 @@
 #include <sstream>
 #include <atomic>
 #include <thread>
+#include <string_view>
 
 
 // linux
@@ -25,7 +26,7 @@
 // nlohmann json
 #include <nlohmann/json.hpp>
 
-#define WART_VERSION 10
+#define WART_VERSION 11
 
 // Concatenate using std::string instead of macros for better handling
 #define SAFE_GETENV(var) (getenv(var) ? getenv(var) : "")
@@ -51,6 +52,13 @@ enum class wartError {
   FS_ERROR,
   PERM_ERROR,
   CURL_ERROR,
+};
+
+enum class LogLevel {
+    DEBUG,
+    INFO,
+    WARNING,
+    ERROR
 };
 
 struct memoryStruct {
