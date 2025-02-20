@@ -10,6 +10,14 @@
 #include <string> // To handle string concatenation properly
 #include <unordered_map>
 #include <vector>
+#include <cstring>
+#include <sstream>
+
+// lib curl
+#include <curl/curl.h>
+
+// nlohmann json
+#include <nlohmann/json.hpp>
 
 #define WART_VERSION 0
 
@@ -36,6 +44,11 @@ enum class wartError {
   FS_ERROR,
   PERM_ERROR,
   CURL_ERROR,
+};
+
+struct memoryStruct {
+    char *memory;
+    size_t size;
 };
 
 #endif // WART_HH

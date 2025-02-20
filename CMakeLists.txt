@@ -9,12 +9,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_COMPILER clang)
 set(CMAKE_CXX_COMPILER clang++)
 
+find_package(CURL REQUIRED)
+include_directories(${CURL_INCLUDE_DIRS})
+
 # optimization
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -flto -march=native -mtune=native -DNDEBUG")
-set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g -fsanitize=address,undefined -fno-omit-frame-pointer")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -flto -march=native -mtune=native -DNDEBUG -lcurl -O2")
+set(CMAKE_CXX_FLAGS_DEBUG "-O2 -g -fsanitize=address,undefined -fno-omit-frame-pointer -lcurl -O2")
 
 # exec
 add_executable(wart wart.cc)
+target_link_libraries(wart ${CURL_LIBRARIES})
 
 # use llvm toolchain optimizations
 target_link_options(wart PRIVATE -flto -Wl,--strip-all -Wl,--gc-sections)

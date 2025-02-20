@@ -1,6 +1,13 @@
 #include "wart.hh"
+#include <curl/curl.h>
+#include <curl/easy.h>
+#include <filesystem>
+#include <nlohmann/json_fwd.hpp>
+#include <unordered_map>
 
 using namespace std;
+
+using json = nlohmann::json;
 
 namespace fs = std::filesystem;
 
@@ -141,6 +148,112 @@ bool wartExists() {
   std::cout << "Wart is healthy." << std::endl;
   return true;
 }
+
+size_t writeMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    size_t realsize = size * nmemb;
+    struct memoryStruct *mem = (struct memoryStruct *)userp;
+
+    char *ptr = (char*)realloc(mem->memory, mem->size + realsize + 1);
+    if (!ptr) {
+        PRINT_ERROR("out of memory. wtf?");
+        return 0;
+    }
+
+    mem->memory = ptr;
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
+
+    return realsize;
+
+}
+
+bool fetchWallpaper(const std::unordered_map<std::string, std::string>& config) {
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        PRINT_ERROR("Failed to initialize CURL");
+        return false;
+    }
+
+    // construct url with parameters
+    std::string url = config.at("source") + "/?resolution=" + config.at("resolution") +
+                     "&format=json&index=0&mkt=en-US";
+    struct memoryStruct chunk;
+    chunk.memory = (char*)malloc(1);
+    chunk.size = 0;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+    CURLcode res = curl_easy_perform(curl);
+
+    if (res != CURLE_OK) {
+        PRINT_ERROR("Failed to fetch wallpaper data");
+        free(chunk.memory);
+        curl_easy_cleanup(curl);
+        return false;
+    }
+
+    try {
+        // Parse JSON response
+        json response = json::parse(chunk.memory);
+
+        // Extract image URL
+        std::string imageUrl = response["url"];
+        std::cout << "Image URL: " << imageUrl << std::endl;
+
+        // Create a new CURL handle for downloading the image
+        CURL* imgCurl = curl_easy_init();
+        if (!imgCurl) {
+            PRINT_ERROR("Failed to initialize CURL for image download");
+            free(chunk.memory);
+            curl_easy_cleanup(curl);
+            return false;
+        }
+
+        // Construct image filename
+        std::string filename = wartHome + "wallpaper." + config.at("format");
+        FILE* fp = fopen(filename.c_str(), "wb");
+        if (!fp) {
+            PRINT_ERROR("Failed to create image file");
+            free(chunk.memory);
+            curl_easy_cleanup(curl);
+            curl_easy_cleanup(imgCurl);
+            return false;
+        }
+
+        // Download image
+        curl_easy_setopt(imgCurl, CURLOPT_URL, imageUrl.c_str());
+        curl_easy_setopt(imgCurl, CURLOPT_WRITEFUNCTION, NULL);
+        curl_easy_setopt(imgCurl, CURLOPT_WRITEDATA, fp);
+
+        res = curl_easy_perform(imgCurl);
+        fclose(fp);
+
+        if (res != CURLE_OK) {
+            PRINT_ERROR("Failed to download image");
+            free(chunk.memory);
+            curl_easy_cleanup(curl);
+            curl_easy_cleanup(imgCurl);
+            return false;
+        }
+
+        curl_easy_cleanup(imgCurl);
+
+    } catch (const json::exception& e) {
+        PRINT_ERROR("JSON parsing failed: " << e.what());
+        free(chunk.memory);
+        curl_easy_cleanup(curl);
+        return false;
+    }
+
+    curl_easy_cleanup(curl);
+    free(chunk.memory);
+    return true;
+}
+
+void cleanOldWallpapers(const std::string& format) { for (const auto& entry : fs::directory_iterator(wartHome)) { if (entry.path().extension() == "." + format) { fs::remove(entry.path()); } } }
 
 void wartDestroy() {
   fs::remove(wartConfig);
