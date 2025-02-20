@@ -1,10 +1,4 @@
 #include "wart.hh"
-#include <atomic>
-#include <curl/curl.h>
-#include <curl/easy.h>
-#include <filesystem>
-#include <nlohmann/json_fwd.hpp>
-#include <unordered_map>
 
 using namespace std;
 
@@ -15,7 +9,20 @@ namespace fs = std::filesystem;
 const std::string wartHome = WART_HOME;
 const std::string wartConfig = WART_CONFIG;
 
-void printVersion() { std::cout << "Running on Wart v" << WART_VERSION << std::endl; }
+void printVersion() {
+    // Wart version
+    std::cout << "Running on Wart: " << WART_VERSION << std::endl;
+
+    // libcurl version
+    curl_version_info_data* curl_info = curl_version_info(CURLVERSION_NOW);
+    std::cout << "libcurl version: " << curl_info->version << std::endl;
+
+    // nlohmann json version
+    std::cout << "nlohmann json version: "
+              << NLOHMANN_JSON_VERSION_MAJOR << "."
+              << NLOHMANN_JSON_VERSION_MINOR << "."
+              << NLOHMANN_JSON_VERSION_PATCH << std::endl;
+}
 
 // helper function to validate each part of rc file
 bool validateInterval(const std::string& value) {

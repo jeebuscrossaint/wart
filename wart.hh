@@ -25,7 +25,7 @@
 // nlohmann json
 #include <nlohmann/json.hpp>
 
-#define WART_VERSION 0
+#define WART_VERSION 10
 
 // Concatenate using std::string instead of macros for better handling
 #define SAFE_GETENV(var) (getenv(var) ? getenv(var) : "")
