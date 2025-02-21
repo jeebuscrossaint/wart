@@ -12,7 +12,6 @@ set(CMAKE_CXX_COMPILER clang++)
 # Find dependencies
 find_package(CURL REQUIRED)
 find_package(nlohmann_json REQUIRED)
-install(TARGETS wart DESTINATION bin)
 
 # Optimization settings
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -flto -march=native -mtune=native -DNDEBUG")
