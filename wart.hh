@@ -1,21 +1,20 @@
 #ifndef WART_HH
 #define WART_HH
 
+#include <atomic>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string> // To handle string concatenation properly
+#include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <vector>
-#include <cstring>
-#include <sstream>
-#include <atomic>
-#include <thread>
-#include <string_view>
-
 
 // linux
 #include <signal.h>
@@ -54,16 +53,11 @@ enum class wartError {
   CURL_ERROR,
 };
 
-enum class LogLevel {
-    DEBUG,
-    INFO,
-    WARNING,
-    ERROR
-};
+enum class LogLevel { DEBUG, INFO, WARNING, ERROR };
 
 struct memoryStruct {
-    char *memory;
-    size_t size;
+  char *memory;
+  size_t size;
 };
 
 #endif // WART_HH
