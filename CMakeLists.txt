@@ -42,3 +42,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(wart PRIVATE -fsanitize=address,undefined)
   target_link_options(wart PRIVATE -fsanitize=address,undefined)
 endif()
+
+# ADD THIS SECTION: Installation targets
+install(TARGETS wart DESTINATION bin)
+install(FILES LICENSE DESTINATION share/licenses/wart)
